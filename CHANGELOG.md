@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-17
+
 ### Added
 
 - Each camera of Synology Surveillance Station as a Gladys camera, found in
@@ -35,4 +37,5 @@ the notes of the version's GitHub Release.
   sent" from "no confirmation".
 - "Test the connection" and "Trust the new certificate" buttons.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-synology-surveillance/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-synology-surveillance/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-synology-surveillance/releases/tag/v0.1.1

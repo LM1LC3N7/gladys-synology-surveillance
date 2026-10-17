@@ -1,6 +1,6 @@
 {
   "name": "gladys-synology-surveillance",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Gladys Assistant external integration for Synology Surveillance Station: cameras (snapshots, enabled, motion) and Home Mode, locally through the Web API of the NAS. Unofficial, not affiliated with Synology.",
   "type": "module",
