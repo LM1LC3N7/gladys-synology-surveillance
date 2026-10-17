@@ -37,7 +37,6 @@ export const IMAGE_INTERVALS = Object.freeze(['0', '30', '60', '300', '600']);
 export const API = Object.freeze({
   INFO: 'SYNO.API.Info',
   AUTH: 'SYNO.API.Auth',
-  SS_INFO: 'SYNO.SurveillanceStation.Info',
   CAMERA: 'SYNO.SurveillanceStation.Camera',
   HOME_MODE: 'SYNO.SurveillanceStation.HomeMode',
   EVENT: 'SYNO.SurveillanceStation.Event',
@@ -46,11 +45,19 @@ export const API = Object.freeze({
 
 export const PREFERRED_VERSIONS = Object.freeze({
   [API.AUTH]: 6, // 6: device token (2-step verification remembered)
-  [API.SS_INFO]: 8,
   [API.CAMERA]: 9,
   [API.HOME_MODE]: 1,
   [API.EVENT]: 5,
   [API.RECORDING]: 6,
+});
+
+/**
+ * Methods capped below the version of their API: Camera.List at 7, like
+ * py-synologydsm-api (`max_version=7`), whose parsing (`id`, `name`,
+ * `enabled`, `camStatus`) was checked against real answers of that version.
+ */
+export const METHOD_VERSIONS = Object.freeze({
+  [`${API.CAMERA}.List`]: 7,
 });
 
 /** Snapshot profiles of Camera.GetSnapshot (py-synologydsm-api const.py). */
@@ -65,10 +72,12 @@ export const MOTION_REASONS = Object.freeze([2, 7]);
 export const MOTION_REASON_NAMES = Object.freeze({ 2: 'motion', 7: 'analytics' });
 
 /**
- * Camera `status` of Camera.List that mean "Surveillance Station cannot reach
- * the camera" (3 disconnected, 4 unavailable, 6 inaccessible, 10 server
- * disconnected, 15 connection failed, 16 unauthorized, 17 RTSP error, 18 no
- * video). Not checked against a real NAS: see TODO.md.
+ * Camera status of Camera.List (`camStatus`, else `status`: in the answer
+ * recorded by py-synologydsm-api, `camStatus` is 1 and `status` 0) that mean
+ * "Surveillance Station cannot reach the camera" (3 disconnected, 4
+ * unavailable, 6 inaccessible, 10 server disconnected, 15 connection failed,
+ * 16 unauthorized, 17 RTSP error, 18 no video). The values come from the API
+ * guide, not checked against a real NAS: see TODO.md.
  */
 export const CAMERA_UNREACHABLE_STATUSES = Object.freeze([3, 4, 6, 10, 15, 16, 17, 18]);
 
@@ -76,14 +85,18 @@ export const CAMERA_UNREACHABLE_STATUSES = Object.freeze([3, 4, 6, 10, 15, 16, 1
 export const IMAGE_PREFIX = 'image/jpg;base64,';
 /** onGetImage (live view, "send a camera image"): the core limit. */
 export const MAX_IMAGE_LENGTH = 150 * 1024;
-/** The image pushed to the device is stored by Gladys: kept small (see gladys-go2rtc). */
+/**
+ * The image pushed to the device is stored by Gladys: kept small (see
+ * gladys-go2rtc); a camera whose snapshots never fit gets up to 150 KB.
+ */
 export const MAX_STORED_IMAGE_LENGTH = 60 * 1024;
-export const MAX_PUSHES_PER_MINUTE = 12;
 
 export const TIMEOUTS = Object.freeze({
   API: 8_000,
   LOGIN: 10_000,
-  SNAPSHOT: 12_000, // onGetImage: Gladys waits 15 s
+  SNAPSHOT: 12_000,
+  /** onGetImage: Gladys waits 15 s, every request of the capture included. */
+  LIVE_IMAGE: 14_000,
 });
 
 /**
@@ -101,12 +114,21 @@ export const INTERVALS = Object.freeze({
   STATUS_MS: 60_000, // cameras (enabled, status) and Home Mode
   RETRY_MIN_MS: 30_000, // NAS unreachable: first retry
   RETRY_MAX_MS: 10 * 60_000,
-  /** A session refused again this soon after a login is not renewed again. */
+  /** No login sooner than this after the previous one (a lost session waits). */
   MIN_LOGIN_GAP_MS: 30_000,
+  /** HTTP 429: pause of every request, within these bounds (Retry-After if given). */
+  BUSY_MIN_MS: 60_000,
+  BUSY_MAX_MS: 6 * 3600_000,
 });
 
 /** A motion event counts as current this long after it stopped. */
 export const MOTION_HOLD_MS = 30_000;
+/**
+ * A motion event seen late (after a restart, a NAS outage) still fires when
+ * it ended (or is still running) less than this ago; older, it is only
+ * marked as seen.
+ */
+export const MOTION_MAX_AGE_S = 120;
 /** Events read in one request (newest first). */
 export const EVENT_PAGE = 50;
 /** Event ids remembered to fire each event once. */
@@ -116,5 +138,5 @@ export const MAX_SEEN_EVENTS = 500;
 export const MAX_JSON_BYTES = 2 * 1024 * 1024;
 export const MAX_JPEG_BYTES = 8 * 1024 * 1024;
 
-/** The persistent store (device token of the 2-step verification, TLS pin). */
+/** The persistent store (device token, TLS pin, motion mark...: see src/store.js). */
 export const STORE_FILE = 'synology-surveillance.json';

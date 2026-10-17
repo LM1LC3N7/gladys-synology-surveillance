@@ -63,6 +63,10 @@ export function createFakeNas({
     snapshotSizes: { 0: 200_000, 1: 40_000, 2: 20_000 },
     /** The DSM error the next requests of an API answer, by api name. */
     apiErrors: {},
+    /** An HTTP error every request answers: { status, headers }, or null. */
+    httpError: null,
+    /** Content type of the snapshots (some DSM versions send another one). */
+    snapshotType: 'image/jpeg',
 
     expireSessions() {
       this.sessions.clear();
@@ -79,6 +83,13 @@ export function createFakeNas({
       const all = { ...params, ...form };
       this.requests.push({ method, path: target.pathname, query: params, params: all, form });
       if (this.clock) this.clock.now += this.latency;
+      if (this.httpError) {
+        return {
+          status: this.httpError.status,
+          headers: this.httpError.headers ?? {},
+          body: Buffer.from(''),
+        };
+      }
 
       if (target.pathname === '/webapi/query.cgi' && all.api === 'SYNO.API.Info') {
         return ok(this.apiInfo);
@@ -91,17 +102,15 @@ export function createFakeNas({
       if (all.api === 'SYNO.API.Auth') return this.auth(all, method);
       if (!this.sessions.has(all._sid)) return fail(119);
       switch (`${all.api}.${all.method}`) {
-        case 'SYNO.SurveillanceStation.Info.GetInfo':
-          return ok({ hostname: 'nas', serial: '1234ABCD', version: { major: 9 } });
         case 'SYNO.SurveillanceStation.Camera.List':
           return ok({ cameras: this.cameras, total: this.cameras.length });
         case 'SYNO.SurveillanceStation.Camera.GetSnapshot': {
           const camera = this.cameras.find((c) => c.id === Number(all.id));
           if (!camera) return fail(401);
-          if (!camera.enabled) return fail(402);
+          if (camera.enabled === false) return fail(402);
           return {
             status: 200,
-            headers: { 'content-type': 'image/jpeg' },
+            headers: { 'content-type': this.snapshotType },
             body: jpegOf(this.snapshotSizes[Number(all.profileType)] ?? 40_000),
           };
         }
@@ -110,7 +119,7 @@ export function createFakeNas({
           const camera = this.cameras.find((c) => c.id === Number(all.idList));
           if (!camera) return fail(401);
           camera.enabled = all.method === 'Enable';
-          camera.status = camera.enabled ? 1 : 7;
+          camera.camStatus = camera.enabled ? 1 : 7;
           return ok();
         }
         case 'SYNO.SurveillanceStation.HomeMode.GetInfo':

@@ -13,9 +13,10 @@
 // renewed once, the login parameters and the device token) is ported from
 // py-synologydsm-api (mib1185, MIT; see THIRD_PARTY_NOTICES.md).
 //
-// Session rules: one login at a time (concurrent requests share it); a
-// session error (106, 107, 119) renews the session ONCE per request, and not
-// at all within 30 s of the previous login (no login loop); a refused login
+// Session rules: one login at a time (concurrent requests share it), and at
+// most one every 30 s whatever asks for it; a session error (106, 107, 119)
+// renews the session ONCE per request, within that limit (no login loop, even
+// with a NAS that keeps dropping the session); a refused login
 // (wrong password, locked account, 2-step verification) is final: no request
 // logs in again until the user changes the configuration or presses "Test
 // the connection" (DSM blocks an address after a few failed logins).
@@ -26,6 +27,7 @@ import {
   INTERVALS,
   MAX_JPEG_BYTES,
   MAX_JSON_BYTES,
+  METHOD_VERSIONS,
   PREFERRED_VERSIONS,
   SNAPSHOT_PROFILES,
   TIMEOUTS,
@@ -43,10 +45,25 @@ const toForm = (params) =>
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
     .join('&');
 
-const asBool = (value) => value === true || value === 1 || value === 'true' || value === '1';
+/** A number, or a numeric string; anything else (null, '', a boolean...) is null. */
 const asNumber = (value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || value.trim() === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+};
+const isJpeg = (bytes) => Buffer.isBuffer(bytes) && bytes[0] === 0xff && bytes[1] === 0xd8;
+
+/** Seconds of a Retry-After header (delta form only), or null. */
+const retryAfterMs = (value) => {
+  const seconds = asNumber(Array.isArray(value) ? value[0] : value);
+  return seconds !== null && seconds >= 0 ? seconds * 1000 : null;
+};
+
+/** Mark an error as "the request never left" (the commands report it so). */
+const notSent = (err) => {
+  if (err && typeof err === 'object') err.notSent = true;
+  return err;
 };
 
 export class SynologyClient {
@@ -107,7 +124,7 @@ export class SynologyClient {
     if (deadline === undefined) return fallback;
     const remaining = deadline - this.now();
     if (remaining < MIN_SEND_MS) {
-      throw new SynologyError(CODES.TIMEOUT, 'No time left: request not sent');
+      throw notSent(new SynologyError(CODES.TIMEOUT, 'No time left: request not sent'));
     }
     return Math.min(fallback, remaining);
   }
@@ -117,7 +134,7 @@ export class SynologyClient {
    * success:false as a SynologyError (API). `raw`: resolves the JPEG bytes.
    */
   async call(path, params, { post = false, raw = false, timeout = TIMEOUTS.API, deadline } = {}) {
-    if (this.closed) throw new SynologyError(CODES.NOT_LOGGED_IN, 'Client closed');
+    if (this.closed) throw notSent(new SynologyError(CODES.NOT_LOGGED_IN, 'Client closed'));
     const url = new URL(`/webapi/${path}`, this.nas.origin);
     let body;
     if (post) {
@@ -135,10 +152,14 @@ export class SynologyClient {
       tls: this.tlsOptions(),
     });
     if (response.status !== 200) {
-      throw new SynologyError(CODES.HTTP, `HTTP ${response.status}`, { status: response.status });
+      const err = new SynologyError(CODES.HTTP, `HTTP ${response.status}`, {
+        status: response.status,
+      });
+      err.retryAfterMs = retryAfterMs(response.headers?.['retry-after']);
+      throw err;
     }
-    const type = String(response.headers?.['content-type'] ?? '').toLowerCase();
-    if (raw && type.startsWith('image/')) return response.body;
+    // A snapshot is recognized by its bytes, whatever the content type says.
+    if (raw && isJpeg(response.body)) return response.body;
     let json;
     try {
       json = JSON.parse(response.body.toString('utf8'));
@@ -181,15 +202,19 @@ export class SynologyClient {
     return Boolean(this.apis?.[api]?.path);
   }
 
-  /** Path and version of an API: the preferred version, within the NAS range. */
-  endpoint(api) {
+  /**
+   * Path and version of an API method: the preferred version (capped per
+   * method, see METHOD_VERSIONS), within the NAS range.
+   */
+  endpoint(api, method) {
     const info = this.apis?.[api];
     if (!info || typeof info.path !== 'string' || !/^[a-z0-9_./-]+$/i.test(info.path)) {
       throw new SynologyError(CODES.NO_API, `${api} is not available on this NAS`);
     }
     const min = asNumber(info.minVersion) ?? 1;
     const max = asNumber(info.maxVersion) ?? min;
-    const version = Math.max(min, Math.min(max, PREFERRED_VERSIONS[api] ?? max));
+    const preferred = METHOD_VERSIONS[`${api}.${method}`] ?? PREFERRED_VERSIONS[api] ?? max;
+    const version = Math.max(min, Math.min(max, preferred));
     return { path: info.path, version };
   }
 
@@ -198,11 +223,28 @@ export class SynologyClient {
   /** After a final refusal, the user asked to try again (button, new configuration). */
   resetRefusal() {
     this.refusal = null;
+    this.lastLoginAt = -Infinity;
   }
 
+  /**
+   * At most one login every 30 s, whatever asks for it (a NAS that keeps
+   * dropping the session must not get a login per request).
+   */
   login({ deadline } = {}) {
     if (this.refusal) return Promise.reject(this.refusal);
-    this.loginPromise ??= this.doLogin({ deadline }).finally(() => {
+    if (this.loginPromise) return this.loginPromise;
+    const wait = this.lastLoginAt + INTERVALS.MIN_LOGIN_GAP_MS - this.now();
+    if (wait > 0) {
+      return Promise.reject(
+        notSent(
+          new SynologyError(
+            CODES.NOT_LOGGED_IN,
+            `Session lost: next login in ${Math.ceil(wait / 1000)} s`,
+          ),
+        ),
+      );
+    }
+    this.loginPromise = this.doLogin({ deadline }).finally(() => {
       this.loginPromise = null;
     });
     return this.loginPromise;
@@ -210,7 +252,7 @@ export class SynologyClient {
 
   async doLogin({ deadline }) {
     await this.discover({ deadline });
-    const { path, version } = this.endpoint(API.AUTH);
+    const { path, version } = this.endpoint(API.AUTH, 'login');
     const deviceToken = this.store.get('deviceTokens', this.accountKey);
     const usedOtp = this.store.get('usedOtp', this.accountKey);
     // A code is single-use: sent once, never again (it stays in the form).
@@ -263,10 +305,21 @@ export class SynologyClient {
    * unless the last login is less than 30 s old.
    */
   async api(api, method, params = {}, options = {}) {
-    await this.discover(options);
-    const { path, version } = this.endpoint(api);
+    try {
+      await this.discover(options);
+    } catch (err) {
+      throw notSent(err);
+    }
+    const { path, version } = this.endpoint(api, method);
     const run = async () => {
-      if (!this.sid) await this.login(options);
+      if (!this.sid) {
+        try {
+          await this.login(options);
+        } catch (err) {
+          // The request itself never left.
+          throw notSent(err);
+        }
+      }
       const sid = this.sid;
       try {
         return await this.call(path, { api, version, method, ...params, _sid: sid }, options);
@@ -290,7 +343,7 @@ export class SynologyClient {
     const sid = this.sid;
     this.sid = null;
     if (!sid || !this.has(API.AUTH)) return;
-    const { path, version } = this.endpoint(API.AUTH);
+    const { path, version } = this.endpoint(API.AUTH, 'logout');
     await this.call(path, {
       api: API.AUTH,
       version,
@@ -306,14 +359,10 @@ export class SynologyClient {
 
   // --- Surveillance Station --------------------------------------------------
 
-  /** General information (model, version); null when the API is missing. */
-  async stationInfo(options) {
-    await this.discover(options);
-    if (!this.has(API.SS_INFO)) return null;
-    return this.api(API.SS_INFO, 'GetInfo', {}, options);
-  }
-
-  /** [{ id, name, enabled, status, model }] */
+  /**
+   * [{ id, name, enabled, status, model }]. `enabled` is null when the answer
+   * has no boolean `enabled` (unknown, never read as "disabled").
+   */
   async listCameras(options) {
     const data = await this.api(API.CAMERA, 'List', {}, options);
     if (!Array.isArray(data.cameras)) throw new SynologyError(CODES.BAD_ANSWER, 'No camera list');
@@ -329,8 +378,8 @@ export class SynologyClient {
       cameras.push({
         id,
         name,
-        enabled: typeof camera.enabled === 'boolean' ? camera.enabled : asBool(camera.enabled),
-        status: asNumber(camera.status ?? camera.camStatus),
+        enabled: typeof camera.enabled === 'boolean' ? camera.enabled : null,
+        status: asNumber(camera.camStatus) ?? asNumber(camera.status),
         model: model || null,
       });
     }
@@ -387,8 +436,10 @@ export class SynologyClient {
       const id = asNumber(event?.eventId ?? event?.id);
       const cameraId = asNumber(event?.cameraId ?? event?.camera_id ?? event?.camId);
       if (id === null || cameraId === null) continue;
-      const start = asNumber(event.startTime ?? event.start_time) ?? 0;
-      const stop = asNumber(event.stopTime ?? event.stop_time) ?? 0;
+      const start = asNumber(event.startTime ?? event.start_time);
+      if (start === null) continue;
+      // No stop time at all is not "still recording": only an explicit 0 is.
+      const stop = asNumber(event.stopTime ?? event.stop_time);
       events.push({
         key: `${cameraId}:${id}:${start}`,
         cameraId,

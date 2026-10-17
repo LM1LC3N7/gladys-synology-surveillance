@@ -23,19 +23,22 @@ Gladys ⇄ SDK ⇄ src/app.js (SurveillanceApp)
 - **Login**: `SYNO.API.Info` (paths, versions), then `SYNO.API.Auth` `login`
   by POST, session `SurveillanceStation`, with a 2-step verification code
   once and the device token afterwards. A session error (106, 107, 119)
-  renews the session once, never within 30 s of the last login. A refused
-  login (400, 401, 402, 403, 404, 406, 407…) is final: nothing logs in again
-  until the configuration is saved or "Test the connection" is pressed; a
-  hash of the refused values is kept in `/data` so a restart does not retry
-  either.
-- **Status** (every minute): `Camera.List` (enabled, reachable) and
-  `HomeMode.GetInfo`; states through `publishChangedStates` (only changes).
+  renews the session once; at most one login every 30 s. A refused login
+  (400, 401, 402, 403, 404, 406, 407…) is final: nothing logs in again until
+  the configuration is saved or "Test the connection" is pressed; a salted
+  HMAC of the refused values is kept in `/data` so a restart does not retry
+  either. HTTP 429 pauses everything (Retry-After, 1 min to 6 h).
+- **Status** (every minute): `Camera.List` (v7: enabled, `camStatus`) and
+  `HomeMode.GetInfo`; states through `publishChangedStates` (only changes); a
+  reading crossed by a command is dropped.
 - **Motion** (every 5 s to 1 min): `Event.List` (or `Recording.List`) of the
   last 15 minutes; motion (reason 2) and analytics (7) events, each fired
-  once; the first reading only arms.
+  once, only within 2 minutes of their end; a mark in `/data` carries over
+  restarts.
 - **Images**: `Camera.GetSnapshot`, balanced profile, else low bandwidth.
-- **Commands**: one queue; disabling a camera and turning Home Mode on are
-  refused unless `allow_camera_control`; the state is read just before
+- **Commands**: one queue, bound to the client of their arrival; disabling a
+  camera and turning Home Mode on are refused unless `allow_camera_control`
+  (checked again just before sending); the state is read just before
   acting; nothing is sent past 3.5 s after the command arrived.
 
 ## Development

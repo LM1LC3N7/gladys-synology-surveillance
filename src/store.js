@@ -9,17 +9,22 @@
 //   - usedOtp: the last 2-step verification code sent, per NAS and account:
 //     a code is single-use, the one left in the configuration is never sent
 //     again after a restart.
-//   - refusals: a hash of the values DSM refused at login, with the DSM code,
-//     per NAS and account: a restart (or a reconnection to Gladys) with the
-//     same values does not log in again.
+//   - refusals: an HMAC (keyed with `meta.salt`) of the values DSM refused at
+//     login, with the DSM code, per NAS and account: a restart (or a
+//     reconnection to Gladys) with the same values does not log in again.
+//   - motionMarks: the last motion event processed, per NAS
+//     (`<start time, NAS clock>|<event key>`): the events of a restart or an
+//     outage are fired once, the older ones only marked as seen.
+//   - meta.salt: a random key generated once for the HMAC above.
 // Writes are atomic (temporary file + rename) and queued. When the file
 // cannot be written (no /data during development), values stay in memory.
 // -----------------------------------------------------------------------------
 
+import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-const SECTIONS = ['deviceTokens', 'tlsPins', 'usedOtp', 'refusals'];
+const SECTIONS = ['deviceTokens', 'tlsPins', 'usedOtp', 'refusals', 'motionMarks', 'meta'];
 const EMPTY = () => Object.fromEntries(SECTIONS.map((section) => [section, {}]));
 
 export class Store {
@@ -66,9 +71,14 @@ export class Store {
     await this.#save();
   }
 
-  /** Resolves once the queued writes are done (tests, shutdown). */
-  settled() {
-    return this.#writes;
+  /** The random key of this installation (created on first use). */
+  async salt() {
+    let salt = this.get('meta', 'salt');
+    if (!salt) {
+      salt = randomBytes(32).toString('hex');
+      await this.set('meta', 'salt', salt);
+    }
+    return salt;
   }
 
   #save() {

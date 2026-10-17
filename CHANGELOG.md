@@ -15,18 +15,23 @@ the notes of the version's GitHub Release.
 - Each camera of Synology Surveillance Station as a Gladys camera, found in
   Discovery: a fresh snapshot in the live view (under 150 KB), an image
   pushed to the dashboard at the pace you choose (every 30 s to 10 min, or
-  none), its enabled state, a motion sensor and an online / unreachable
-  badge.
+  none), its on/off state in Surveillance Station (the camera on/off control
+  of Gladys), a motion sensor and an online / unreachable badge.
 - The Home Mode of Surveillance Station as a switch, and the scene triggers
   "Motion detected" (motion detection or video analytics, read every 5 s to
-  1 min) and "Home Mode changed".
+  1 min; the events of a restart or an outage fire once, within 2 minutes,
+  never in a burst) and "Home Mode changed".
 - Local connection through the Web API of DSM with a dedicated account: 2-step
-  verification handled once (device token kept in `/data`), a self-signed
-  certificate accepted only when allowed (trusted on first use, then pinned),
-  a lost session renewed once, a refused password never tried again alone.
+  verification handled once (device token kept in `/data`, the code field
+  masked), a self-signed certificate accepted only when allowed (trusted on
+  first use, then pinned), a lost session renewed once and at most one login
+  every 30 s, a refused password never tried again alone, a NAS asking to
+  slow down (HTTP 429) paused as long as it asks.
 - Safety: disabling a camera and turning Home Mode on are refused unless
-  allowed in the configuration; every command runs alone, reads the state
-  just before acting and sends nothing past 3.5 s.
+  allowed in the configuration, checked again just before sending; every
+  command runs alone, reads the state just before acting (unknown: refused),
+  sends nothing past 3.5 s or after a configuration change, and tells "not
+  sent" from "no confirmation".
 - "Test the connection" and "Trust the new certificate" buttons.
 
 [Unreleased]: https://github.com/LM1LC3N7/gladys-synology-surveillance/commits/main

@@ -103,6 +103,9 @@ test('the configuration matches the code', () => {
     'image_refresh',
   ]);
   assert.equal(fields.password.type, 'secret');
+  assert.equal(fields.otp_code.type, 'secret', 'a 2-step verification code is a credential');
+  assert.match(fields.url.description.en, /in clear/, 'the risk of http is said');
+  assert.match(fields.url.description.fr, /en clair/);
   assert.doesNotMatch(JSON.stringify(manifest), /chiffré|encrypted/i, 'a secret is not encrypted');
   // Safety: reducing the surveillance is off unless the user allows it.
   assert.equal(fields.allow_camera_control.type, 'boolean');

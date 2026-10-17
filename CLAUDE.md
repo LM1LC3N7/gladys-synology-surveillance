@@ -37,7 +37,7 @@ src/app.js                        SurveillanceApp: lifecycle, loops, images, com
 src/synology/client.js            DSM Web API: discovery, login, session, Surveillance Station calls
 src/synology/http.js              the only network access (node:http / https, TLS pin)
 src/synology/errors.js            SynologyError, DSM error tables, retry policy
-src/store.js                      /data: device token, TLS pin, used OTP, login refusals
+src/store.js                      /data: device token, TLS pin, used OTP, refusals, motion mark
 src/devices.js                    the Gladys devices and their external ids (pure)
 src/config.js                     DEFAULTS (mirror the manifest defaults) + normalization
 src/constants.js, src/i18n.js     keys, limits, timings; runtime texts (en/fr)

@@ -30,18 +30,30 @@ up to date at the end of every milestone.
       (in memory and on loopback) and loopback http / https servers.
       **Never tested against a real NAS.** No Docker on this PC: no e2e test
       in a container.
+- [x] **Review corrections** (2026-10-17): commands bound to their client
+      and re-checked just before sending, status readings crossed by a
+      command dropped, unknown `enabled` kept unknown, motion mark in
+      `/data` and 2-minute age, one timer chain per loop (epoch), Camera.List
+      at v7, one login per 30 s, HTTP 429 / 5xx, "not sent" vs "no
+      confirmation", 14 s for the live image, 150 KB fallback for the
+      dashboard image, snapshot by its bytes, `camStatus`, strict numbers,
+      salted HMAC, `camera`/`enabled` feature, OTP as a secret
+      (`test/review.test.js` holds the reviewer's reproductions).
 - [ ] **Milestone 2 — real NAS** (a tester with Surveillance Station):
       record real answers as fixtures (secrets removed), fix what differs.
       To check first:
-  - `Camera.List` v9: the name field (`name` / `newName`), `enabled`,
-    `status` values (the unreachable list in `src/constants.js` comes from
-    the API guide);
+  - `Camera.List` (asked at v7, see Decisions): the name field (`name` /
+    `newName`), `enabled` always a boolean?, the `camStatus` values (the
+    unreachable list in `src/constants.js` comes from the API guide);
+    whether a newer version would be needed on SS 9;
   - `Event.List` v5 vs `Recording.List` v6 on SS 9.x: field names
     (`eventId`, `cameraId`, `startTime`, `stopTime`, `recording`), the sort
     order, whether `fromTime` is honoured, the reason codes (2 motion, 7
     analytics?) and how long a motion event stays "recording";
   - the NAS clock vs the container clock (the 15-minute window absorbs a
-    skew, the motion hold uses the container clock only);
+    skew; the 2-minute age of a motion event compares the NAS times of the
+    event with the container clock: a skew above a minute or so loses or
+    revives events);
   - `GetSnapshot`: the size of real snapshots per profile, the time it
     takes (onGetImage has 15 s), the answer for a disabled or disconnected
     camera (error 402? an empty image?);
@@ -54,7 +66,8 @@ up to date at the end of every milestone.
     answers once the device is revoked;
   - the default DSM certificate (signed by a per-NAS "Synology Inc. CA"):
     pinned leaf fingerprint, renewal behaviour;
-  - error 119 / 106 after a DSM restart, auto-block after failed logins.
+  - error 119 / 106 after a DSM restart, auto-block after failed logins;
+    whether DSM ever answers 429 / 5xx with a Retry-After.
 - [ ] **Milestone 3 — more**: motion detection on/off per camera
       (`Camera.Event` `MDParamSave`), manual recording start/stop, PTZ
       presets, the live stream path (`GetLiveViewPath`, RTSP) for go2rtc,
@@ -85,11 +98,18 @@ up to date at the end of every milestone.
 - **External ids**: `camera:<Surveillance Station camera id>` (the id SS
   gives a camera, stable while it exists) and `station:main` (one NAS per
   integration). Features `image`, `enabled`, `motion`, `home_mode`.
-- **Feature types**: the enabled state is a `switch`/`binary`, not the core's
-  `camera`/`enabled` gate: that one is a Gladys-side privacy gate whose
-  support depends on the core version, and mixing it with an SS command
-  gated by `allow_camera_control` would be confusing. Motion is
+- **Feature types** (coordinator's decision after the review): the enabled
+  state is the core's `camera`/`enabled` feature, like gladys-frigate (same
+  author), mapped to Enable / Disable in Surveillance Station. Motion is
   `motion-sensor`/`binary`, Home Mode `switch`/`binary`.
+- **Versions per method**: the preferred version of each API, clamped to the
+  NAS range, except `Camera.List`, capped at 7 like py-synologydsm-api
+  (`max_version=7`), whose parsing was checked on real answers of that
+  version; `GetSnapshot`, `Enable`, `Disable` stay at 9.
+- **Camera fields**: `enabled` is taken only as a boolean, anything else is
+  unknown (no state published, a command refused, an image still tried);
+  the camera status is `camStatus`, else `status` (in the answer recorded
+  by py-synologydsm-api `camStatus` is 1 while `status` is 0).
 - **Safety of the commands**: disabling a camera and turning Home Mode on
   reduce the surveillance, like disarming an alarm: refused unless
   `allow_camera_control` (off by default). Enabling a camera and leaving
@@ -97,17 +117,33 @@ up to date at the end of every milestone.
   queue, re-reads the state on the NAS just before acting (unknown state:
   refused; same state: nothing sent), and is refused before sending once
   3.5 s have passed since it arrived (Gladys waits 5 s); the deadline is
-  passed down to every HTTP request, the login included. A command whose
-  request fails without an answer is reported "no confirmation" and the
-  state is read again 2 s later.
+  passed down to every HTTP request, the login included. The command keeps
+  the client of the moment it arrived; just before sending, it is refused
+  if the configuration changed (another client or generation) or if
+  `allow_camera_control` was unticked meanwhile. A request that failed
+  before its connection was up (or a login / deadline refusal) is reported
+  "nothing was sent"; one sent without an answer "no confirmation", and the
+  state is read again 2 s later. A status reading (loop or Discovery)
+  crossed by a command is dropped (state version counter): no stale state,
+  no spurious `home_mode_changed`.
+- **Timer chains**: `halt()` bumps an epoch; each loop (status, events,
+  images) checks it before scheduling its next run, so a run still in flight
+  when the NAS failed does not leave a second chain after the reconnection.
 - **Login refusals**: DSM auto-blocks an address after a few failed logins,
   so a refused login (400 to 411 of SYNO.API.Auth, OTP codes included) is
   never retried by the integration itself: not by the loops, not by a
-  reconnection to Gladys, not by a restart (a SHA-256 of origin, user,
-  password and code is kept in `/data` with the DSM code). Saving the
-  configuration or pressing "Test the connection" tries once. A transient
+  reconnection to Gladys, not by a restart (an HMAC-SHA-256 of origin,
+  user, password and code, keyed with a random salt generated once in
+  `/data`, is kept there with the DSM code). Saving the configuration or
+  pressing "Test the connection" (bounded to 25 s) tries once. A transient
   failure (network, timeout, HTTP error, TLS) retries after 30 s, doubling
-  up to 10 min.
+  up to 10 min; an HTTP 5xx says "server error" and honours a Retry-After
+  (up to 6 h). HTTP 429 pauses every path (loops, commands, images,
+  Discovery) for its Retry-After, bounded 1 min to 6 h.
+- **Login rate**: at most one login every 30 s per client, whatever asks
+  (a lost session included): a NAS that keeps dropping the session never
+  gets a login per request. "Test the connection" and a saved
+  configuration start a new client.
 - **2-step verification**: the code is a configuration field (Gladys has no
   interactive prompt); sent once (the last code sent is remembered in
   `/data` and never resent), with `enable_device_token=yes`; the `did`
@@ -128,15 +164,26 @@ up to date at the end of every milestone.
 - **Motion by polling**: Surveillance Station has no push API besides Action
   Rules (webhooks configured by hand): `Event.List` is read every 5-60 s
   (10 s default), one request for all cameras, the last 15 minutes, 50
-  events. Each event key (`camera:id:start`) fires once (500 remembered);
-  the first reading only arms. The motion sensor is 1 while a motion event
-  is still recording, or for 30 s after a new one was seen (container
-  clock). States go through `publishChangedStates` (only changes: far under
-  300 states/min).
+  events. Each event key (`camera:id:start`) fires once (500 remembered),
+  and only when it ended (or still runs) less than 2 minutes ago: an outage
+  does not end in a burst of old triggers. A mark in `/data` (NAS start
+  time and key of the last motion event processed) carries over restarts
+  and reconnections to Gladys: after one, the events newer than the mark
+  (and of the last 2 minutes) fire, the others are only marked as seen; no
+  mark (first start): the events of the last 2 minutes fire. An event
+  without a stop time is not "still recording" (only `stopTime: 0` or
+  `recording: true` are). The motion sensor is 1 while a motion event is
+  still recording, or for 30 s after a new one fired (container clock).
+  States go through `publishChangedStates` (only changes: far under 300
+  states/min).
 - **Images**: `GetSnapshot` profile balanced, then low bandwidth, until the
-  `image/jpg;base64,` string fits 150 KB (live) or 60 KB (pushed, stored by
-  Gladys); no resizing in JavaScript (no runtime dependency). Pushed every
-  30 s to 10 min (60 s default), cameras in turn: at most 2 images/min per
-  camera, under the 12/min limit.
+  `image/jpg;base64,` string fits 150 KB (live, every request within 14 s)
+  or 60 KB (pushed, stored by Gladys; a camera that never fits goes up to
+  150 KB, with one warning); a snapshot is recognized by its bytes (FF D8),
+  whatever its content type; no resizing in JavaScript (no runtime
+  dependency). Pushed every 30 s to 10 min (60 s default), cameras in
+  turn: at most 2 images/min per camera, under the 12/min limit.
+- **2-step verification code field**: a `secret` (masked like the
+  password). The NAS address says that http sends the password in clear.
 - `gladys_version >=5.1.0` (scene triggers). Single container, 256 MB is
   plenty (no image decoding).

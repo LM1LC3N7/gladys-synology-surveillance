@@ -135,6 +135,22 @@ export const T = {
         },
         UNREACHABLE_TAIL(delay),
       ),
+    busy: (delay) =>
+      join(
+        {
+          en: 'The NAS asks Gladys to slow down (HTTP 429): every request is paused.',
+          fr: 'Le NAS demande à Gladys de ralentir (HTTP 429) : toutes les requêtes sont suspendues.',
+        },
+        UNREACHABLE_TAIL(delay),
+      ),
+    serverError: (status, delay) =>
+      join(
+        {
+          en: `DSM answers with a server error (HTTP ${status}): it may be restarting or updating.`,
+          fr: `DSM répond par une erreur serveur (HTTP ${status}) : il redémarre ou se met peut-être à jour.`,
+        },
+        UNREACHABLE_TAIL(delay),
+      ),
     unreachable: (err, delay) =>
       join(
         { en: 'The NAS does not answer:', fr: 'Le NAS ne répond pas :' },
@@ -172,7 +188,12 @@ export const T = {
     unknownCamera: 'This camera is no longer in Surveillance Station: nothing was sent',
     noConfirmation: (err) =>
       `No confirmation from the NAS (${reasonOf(err).en}): the state is read again`,
+    notSent: (err) => `The command could not reach the NAS (${reasonOf(err).en}): nothing was sent`,
     refused: (err) => `The NAS refused the command (${reasonOf(err).en})`,
+    configChanged: 'The configuration changed meanwhile: nothing was sent, try again',
+    busy: 'The NAS asked Gladys to slow down: nothing was sent, try again later',
+    testTooLong:
+      'The NAS has not answered yet: see the connection status in a moment (nothing else to do)',
     cameraDisabled: 'The camera is disabled in Surveillance Station: no image',
     image: (name, err) => `No image of "${name}": ${reasonOf(err).en}`,
     selfSignedOff:

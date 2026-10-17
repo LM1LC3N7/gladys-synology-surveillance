@@ -5,7 +5,8 @@ Web de DSM (sans cloud, sans QuickConnect) :
 
 - chaque caméra devient une caméra Gladys : son image sur le tableau de bord,
   un instantané tout frais en vue en direct ;
-- son état **activé** dans Surveillance Station (un interrupteur) ;
+- son état **activé** dans Surveillance Station (la commande marche / arrêt
+  des caméras de Gladys) ;
 - un détecteur de **mouvement** par caméra, et le déclencheur de scène
   **Mouvement détecté** (événements de détection de mouvement ou d’analyse
   vidéo) ;
@@ -36,9 +37,9 @@ Intégration non officielle, sans lien avec Synology.
 
 ## Configuration
 
-- **Adresse du NAS** : `https://192.168.1.10:5001` (ou
-  `http://192.168.1.10:5000` ; en http le mot de passe traverse votre réseau
-  en clair). Une adresse seule est lue en https sur le port 5001.
+- **Adresse du NAS** : `https://192.168.1.10:5001`. Une adresse seule est lue
+  en https sur le port 5001. Évitez `http://192.168.1.10:5000` : le mot de
+  passe et la session traverseraient votre réseau en clair.
 - **Identifiant / mot de passe DSM** : le compte dédié. Le mot de passe est
   gardé par Gladys dans sa base, jamais réaffiché, envoyé seulement à votre
   NAS.
@@ -47,7 +48,7 @@ Intégration non officielle, sans lien avec Synology.
   votre application d’authentification et enregistrez aussitôt (un code dure
   30 s). Gladys garde ensuite le jeton d’appareil donné par DSM (dans son
   volume `/data`) et n’a plus besoin de code. Un code n’est envoyé qu’une
-  fois.
+  fois ; le champ est masqué comme le mot de passe.
 - **Accepter le certificat auto-signé du NAS** : désactivé par défaut, le
   certificat doit alors venir d’une autorité reconnue (Let’s Encrypt…).
   Activé : le certificat vu à la première connexion est accepté et mémorisé ;
@@ -73,10 +74,15 @@ Surveillance Station (mode Maison) voulus.
   surveillance**. Laissez-le décoché si une scène ou un autre utilisateur ne
   doit pas pouvoir aveugler vos caméras.
 - Les commandes passent une par une. Juste avant d’agir, Gladys relit l’état
-  sur le NAS : s’il n’y arrive pas, rien n’est envoyé ; si le NAS est déjà
-  dans l’état demandé, rien n’est envoyé non plus. Quand le NAS répond trop
-  lentement (plus de 3,5 s), rien n’est envoyé et Gladys affiche un échec
-  (jamais d’action après un échec affiché).
+  sur le NAS : s’il n’y arrive pas (ou si le NAS ne le dit pas), rien n’est
+  envoyé ; si le NAS est déjà dans l’état demandé, rien n’est envoyé non
+  plus. Quand le NAS répond trop lentement (plus de 3,5 s), rien n’est envoyé
+  et Gladys affiche un échec (jamais d’action après un échec affiché). Si
+  vous décochez **Autoriser la réduction de la surveillance** ou changez la
+  configuration pendant qu’une commande attend, elle n’est pas envoyée.
+- Un échec dit si la commande n’a **pas été envoyée** (elle n’a pas pu
+  joindre le NAS) ou a été envoyée **sans confirmation** (l’état est alors
+  relu).
 
 ## Mouvements
 
@@ -85,9 +91,16 @@ les événements récents au rythme choisi. Un événement de mouvement ou
 d’analyse vidéo déclenche une fois **Mouvement détecté** (avec la caméra, son
 nom et `motion` ou `analytics`) et active le détecteur de mouvement de la
 caméra ; le détecteur revient à « pas de mouvement » une fois l’événement
-terminé. Les événements déjà présents au démarrage ne déclenchent rien. La
-détection de mouvement doit être activée sur la caméra dans Surveillance
-Station (paramètres de détection d’événements).
+terminé.
+
+Un événement ne déclenche que s’il s’est terminé (ou dure encore) il y a
+moins de 2 minutes : après une panne du NAS, les anciens événements sont
+marqués vus sans rafale de déclenchements. Gladys garde dans son volume
+`/data` le dernier événement traité : après un redémarrage de l’intégration
+ou une reconnexion à Gladys, les événements plus récents des 2 dernières
+minutes déclenchent quand même, et aucun ne déclenche deux fois. La détection
+de mouvement doit être activée sur la caméra dans Surveillance Station
+(paramètres de détection d’événements).
 
 ## Problèmes de connexion
 
@@ -98,14 +111,19 @@ Station (paramètres de détection d’événements).
 - **NAS injoignable** : nouvel essai après 30 s, puis jusqu’à toutes les
   10 min ; les caméras sont affichées injoignables en attendant.
 - **Session perdue** (DSM redémarré, session expirée) : renouvelée une fois,
-  jamais en boucle.
+  jamais en boucle (une connexion toutes les 30 s au plus).
+- **NAS surchargé** (HTTP 429) : toutes les requêtes s’arrêtent de 1 minute à
+  6 heures, aussi longtemps que le NAS le demande (Retry-After). **Erreur
+  serveur** (HTTP 5xx, DSM qui redémarre ou se met à jour) : nouvel essai
+  comme pour un NAS injoignable.
 
 ## Limites
 
 - Un seul NAS par intégration. Les images sont des instantanés (pas de flux
   vidéo en direct dans Gladys) ; un instantané plus lourd que ce que Gladys
-  accepte (150 Ko, 60 Ko pour l’image du tableau de bord) est redemandé dans
-  le profil « faible bande passante », sinon il n’est pas affiché.
+  accepte (150 Ko) est redemandé dans le profil « faible bande passante »,
+  sinon il n’est pas affiché. L’image du tableau de bord vise 60 Ko et monte
+  jusqu’à 150 Ko pour une caméra dont les instantanés n’y tiennent jamais.
 - Le détecteur de mouvement et le déclencheur ont un retard d’au plus le
   rythme choisi.
 - Seuls les événements de mouvement (raison 2) et d’analyse vidéo (7) comptent

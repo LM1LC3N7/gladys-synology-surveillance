@@ -46,7 +46,9 @@ export function buildCameraDevice(gladys, camera) {
       {
         name: 'Enabled in Surveillance Station',
         external_id: ids.feature(FEATURES.ENABLED),
-        ...binary(DEVICE_FEATURE_CATEGORIES.SWITCH, DEVICE_FEATURE_TYPES.SWITCH.BINARY, {
+        // The core's camera on/off feature (like gladys-frigate): mapped to
+        // Enable / Disable of the camera in Surveillance Station.
+        ...binary(DEVICE_FEATURE_CATEGORIES.CAMERA, DEVICE_FEATURE_TYPES.CAMERA.ENABLED, {
           read_only: false,
           has_feedback: true,
         }),

@@ -33,8 +33,8 @@
       "type": "string",
       "label": { "en": "NAS address", "fr": "Adresse du NAS" },
       "description": {
-        "en": "The address of DSM on your network: https://<IP>:5001 (or http://<IP>:5000). A bare address is read as https on port 5001.",
-        "fr": "L'adresse de DSM sur votre réseau : https://<IP>:5001 (ou http://<IP>:5000). Une adresse seule est lue en https sur le port 5001."
+        "en": "The address of DSM on your network: https://<IP>:5001. A bare address is read as https on port 5001. Avoid http://<IP>:5000: the password and the session would cross your network in clear.",
+        "fr": "L'adresse de DSM sur votre réseau : https://<IP>:5001. Une adresse seule est lue en https sur le port 5001. Évitez http://<IP>:5000 : le mot de passe et la session traverseraient votre réseau en clair."
       },
       "placeholder": {
         "en": "e.g. https://192.168.1.10:5001",
@@ -61,7 +61,7 @@
     },
     {
       "key": "otp_code",
-      "type": "string",
+      "type": "secret",
       "label": { "en": "2-step verification code", "fr": "Code de validation en deux étapes" },
       "description": {
         "en": "Only if the account uses 2-step verification: a fresh 6-digit code of your authenticator app, saved at once. Gladys then keeps a device token and never asks again; the code is used once.",

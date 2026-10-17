@@ -64,12 +64,16 @@ export function httpRequest(
     let settled = false;
     let req = null;
     let socket = null;
+    // Until the connection (TLS included) is up, nothing of the request has
+    // left: a failure then is "not sent" for sure (see the commands).
+    let connected = false;
 
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (error) {
+        if (!connected) error.notSent = true;
         req?.destroy();
         socket?.destroy();
         reject(error);
@@ -114,6 +118,7 @@ export function httpRequest(
         options.agent = false;
       }
       req = lib.request(options, (res) => {
+        connected = true;
         const chunks = [];
         let size = 0;
         res.on('data', (chunk) => {
@@ -132,6 +137,15 @@ export function httpRequest(
           }),
         );
         res.on('error', (err) => finish(transportError(err)));
+      });
+      req.on('socket', (s) => {
+        if (createConnection || !s.connecting) {
+          connected = true;
+          return;
+        }
+        s.once(lib === https ? 'secureConnect' : 'connect', () => {
+          connected = true;
+        });
       });
       req.on('error', (err) => finish(transportError(err)));
       if (payload) req.write(payload);

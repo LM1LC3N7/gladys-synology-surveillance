@@ -55,7 +55,7 @@ test('discovery, then a login by POST with the credentials in the body only', as
   assert.equal(login.query.account, undefined);
   assert.equal(login.form.passwd, 's3cret pass&=', 'special characters survive the encoding');
   assert.equal(login.form.session, 'SurveillanceStation');
-  assert.equal(list.query.version, '9');
+  assert.equal(list.query.version, '7', 'Camera.List capped at 7 like py-synologydsm-api');
   assert.equal(list.query._sid, 'sid-1');
 });
 
@@ -160,7 +160,89 @@ test('a deadline: nothing is sent once it has passed', async () => {
   const before = nas.requests.length;
   await assert.rejects(
     client.setHomeMode(true, { deadline: clock.now + 100 }),
-    (err) => err.code === CODES.TIMEOUT,
+    (err) => err.code === CODES.TIMEOUT && err.notSent === true,
   );
   assert.equal(nas.requests.length, before, 'not sent');
+});
+
+test('versions per method: Camera.List at 7, the other Camera methods at 9', async () => {
+  const { nas, client } = await setup();
+  await client.listCameras();
+  await client.snapshot(1);
+  await client.setCameraEnabled(1, true);
+  const versions = nas.requests
+    .filter((r) => r.query.api === 'SYNO.SurveillanceStation.Camera')
+    .map((r) => `${r.query.method}:${r.query.version}`);
+  assert.deepEqual(versions, ['List:7', 'GetSnapshot:9', 'Enable:9']);
+});
+
+test('the camera fields: enabled unknown stays unknown, camStatus first', async () => {
+  const { nas, client } = await setup();
+  delete nas.cameras[0].enabled;
+  nas.cameras[1].enabled = 'true';
+  nas.cameras[2].camStatus = undefined;
+  nas.cameras[2].status = 3;
+  const cameras = await client.listCameras();
+  assert.deepEqual(
+    cameras.map((c) => [c.id, c.enabled, c.status]),
+    [
+      [1, null, 1],
+      [2, null, 1],
+      [5, false, 3],
+    ],
+    'only a boolean is an enabled state; status 0 of the fixture is not the camera status',
+  );
+});
+
+test('events: no stop time is not "still recording"; null and booleans are no numbers', async () => {
+  const { nas, client } = await setup();
+  nas.events = [
+    { eventId: 1, cameraId: 1, reason: 2, startTime: 100 },
+    { eventId: 2, cameraId: 1, reason: 2, startTime: 100, stopTime: '' },
+    { eventId: 3, cameraId: 1, reason: 2, startTime: 100, stopTime: 0 },
+    { eventId: null, cameraId: 1, reason: 2, startTime: 100 },
+    { eventId: 4, cameraId: true, reason: 2, startTime: 100 },
+    { eventId: 5, cameraId: 1, reason: 2, startTime: null },
+  ];
+  const events = await client.events({ fromTime: 1, limit: 50 });
+  assert.deepEqual(
+    events.map((e) => [e.key, e.stop, e.ongoing]),
+    [
+      ['1:1:100', null, false],
+      ['1:2:100', null, false],
+      ['1:3:100', 0, true],
+    ],
+  );
+});
+
+test('a snapshot is recognized by its bytes, whatever its content type', async () => {
+  const { nas, client } = await setup();
+  nas.snapshotType = 'application/octet-stream';
+  const jpeg = await client.snapshot(1);
+  assert.equal(jpeg.length, nas.snapshotSizes[1]);
+});
+
+test('at most one login every 30 s, even when the NAS keeps dropping the session', async () => {
+  const { nas, client, clock } = await setup();
+  await client.homeMode();
+  const original = nas.handle.bind(nas);
+  nas.handle = (method, url, body) => {
+    if (!url.includes('SYNO.API')) nas.sessions.clear();
+    return original(method, url, body);
+  };
+  for (let i = 0; i < 11; i += 1) {
+    clock.now += 5_000;
+    await client.homeMode().catch(() => {});
+  }
+  assert.ok(nas.logins.length <= 3, `${nas.logins.length} logins in 55 s`);
+  await assert.rejects(client.homeMode(), (err) => err.notSent === true || err.apiCode === 119);
+});
+
+test('HTTP errors carry their status and Retry-After', async () => {
+  const { nas, client } = await setup();
+  nas.httpError = { status: 429, headers: { 'retry-after': '120' } };
+  await assert.rejects(
+    client.listCameras(),
+    (err) => err.code === CODES.HTTP && err.status === 429 && err.retryAfterMs === 120_000,
+  );
 });
