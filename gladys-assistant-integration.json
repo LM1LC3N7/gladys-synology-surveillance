@@ -1,104 +1,166 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "Synology Surveillance Station",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Synology Surveillance Station, locally: camera images, motion, cameras on/off, Home Mode.",
+    "fr": "Synology Surveillance Station en local : images, mouvements, caméras activées, mode Maison."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-synology-surveillance:0.1.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-synology-surveillance/main/cover.png",
+  "categories": ["security", "multimedia"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": { "en": "How it works", "fr": "Fonctionnement" },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "Gladys talks to Surveillance Station on your Synology NAS, on your network, through the Web API of DSM. Each camera of Surveillance Station becomes a Gladys camera (Discovery tab) with its image, its enabled state and a motion sensor; the Home Mode of Surveillance Station becomes a switch. Create a DSM account dedicated to Gladys, without 2-step verification, with access to Surveillance Station only (see the documentation). Unofficial integration, not affiliated with Synology.",
+        "fr": "Gladys dialogue avec Surveillance Station sur votre NAS Synology, sur votre réseau, par l'API Web de DSM. Chaque caméra de Surveillance Station devient une caméra Gladys (onglet Découverte) avec son image, son état activé et un détecteur de mouvement ; le mode Maison de Surveillance Station devient un interrupteur. Créez un compte DSM dédié à Gladys, sans validation en deux étapes, avec accès à Surveillance Station seulement (voir la documentation). Intégration non officielle, sans lien avec Synology."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://kb.synology.com/en-global/DSM/help/SurveillanceStation/surveillance_station",
+          "label": { "en": "Surveillance Station help", "fr": "Aide de Surveillance Station" }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
+      "key": "url",
+      "type": "string",
+      "label": { "en": "NAS address", "fr": "Adresse du NAS" },
       "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+        "en": "The address of DSM on your network: https://<IP>:5001 (or http://<IP>:5000). A bare address is read as https on port 5001.",
+        "fr": "L'adresse de DSM sur votre réseau : https://<IP>:5001 (ou http://<IP>:5000). Une adresse seule est lue en https sur le port 5001."
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "placeholder": {
+        "en": "e.g. https://192.168.1.10:5001",
+        "fr": "ex. https://192.168.1.10:5001"
+      },
+      "required": true
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
-      },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "key": "username",
+      "type": "string",
+      "label": { "en": "DSM user name", "fr": "Identifiant DSM" },
+      "placeholder": { "en": "e.g. gladys", "fr": "ex. gladys" },
+      "required": true
     },
     {
-      "key": "unit",
-      "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
+      "key": "password",
+      "type": "secret",
+      "label": { "en": "DSM password", "fr": "Mot de passe DSM" },
+      "description": {
+        "en": "Kept by Gladys in its database, never shown again, sent only to your NAS.",
+        "fr": "Gardé par Gladys dans sa base, jamais réaffiché, envoyé seulement à votre NAS."
+      },
+      "required": true
+    },
+    {
+      "key": "otp_code",
+      "type": "string",
+      "label": { "en": "2-step verification code", "fr": "Code de validation en deux étapes" },
+      "description": {
+        "en": "Only if the account uses 2-step verification: a fresh 6-digit code of your authenticator app, saved at once. Gladys then keeps a device token and never asks again; the code is used once.",
+        "fr": "Seulement si le compte utilise la validation en deux étapes : un code à 6 chiffres tout frais de votre application d'authentification, enregistré aussitôt. Gladys garde ensuite un jeton d'appareil et ne le redemande plus ; le code ne sert qu'une fois."
+      },
+      "placeholder": { "en": "e.g. 123456", "fr": "ex. 123456" },
+      "required": false
+    },
+    {
+      "key": "allow_self_signed",
+      "type": "boolean",
+      "label": {
+        "en": "Accept the self-signed certificate of the NAS",
+        "fr": "Accepter le certificat auto-signé du NAS"
+      },
+      "description": {
+        "en": "Off: the certificate must come from a known authority. On: the certificate seen at the first connection is trusted and remembered; a different one later is refused until you press \"Trust the new certificate\".",
+        "fr": "Désactivé : le certificat doit venir d'une autorité reconnue. Activé : le certificat vu à la première connexion est accepté et mémorisé ; un autre ensuite est refusé tant que vous n'appuyez pas sur « Faire confiance au nouveau certificat »."
+      },
       "required": false,
-      "default": "celsius",
+      "default": false
+    },
+    {
+      "key": "security_section",
+      "type": "section",
+      "label": { "en": "Commands", "fr": "Commandes" },
+      "description": {
+        "en": "Enabling a camera and leaving Home Mode are always possible from Gladys. Disabling a camera or turning Home Mode on reduces the surveillance (fewer recordings, fewer alerts): Gladys refuses both unless you allow them below. The account then needs a Surveillance Station privilege profile that can change cameras and Home Mode.",
+        "fr": "Activer une caméra et quitter le mode Maison sont toujours possibles depuis Gladys. Désactiver une caméra ou passer en mode Maison réduit la surveillance (moins d'enregistrements, moins d'alertes) : Gladys refuse les deux tant que vous ne les autorisez pas ci-dessous. Le compte a alors besoin d'un profil de privilèges Surveillance Station qui peut modifier les caméras et le mode Maison."
+      }
+    },
+    {
+      "key": "allow_camera_control",
+      "type": "boolean",
+      "label": {
+        "en": "Allow reducing the surveillance (disable a camera, turn Home Mode on)",
+        "fr": "Autoriser la réduction de la surveillance (désactiver une caméra, activer le mode Maison)"
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "polling_section",
+      "type": "section",
+      "label": { "en": "Refresh", "fr": "Rafraîchissement" },
+      "description": {
+        "en": "Surveillance Station does not push its events to Gladys: Gladys reads the recent events at the pace below (motion sensors and the \"Motion detected\" trigger), and the cameras and Home Mode every minute.",
+        "fr": "Surveillance Station ne pousse pas ses événements vers Gladys : Gladys lit les événements récents au rythme ci-dessous (détecteurs de mouvement et déclencheur « Mouvement détecté »), et les caméras et le mode Maison chaque minute."
+      }
+    },
+    {
+      "key": "event_interval",
+      "type": "select",
+      "label": { "en": "Motion events read", "fr": "Lecture des mouvements" },
+      "required": true,
+      "default": "10",
       "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
+        { "value": "5", "label": { "en": "Every 5 seconds", "fr": "Toutes les 5 secondes" } },
+        { "value": "10", "label": { "en": "Every 10 seconds", "fr": "Toutes les 10 secondes" } },
+        { "value": "30", "label": { "en": "Every 30 seconds", "fr": "Toutes les 30 secondes" } },
+        { "value": "60", "label": { "en": "Every minute", "fr": "Toutes les minutes" } }
       ]
     },
     {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
-      "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+      "key": "image_refresh",
+      "type": "select",
+      "label": {
+        "en": "Dashboard image refresh",
+        "fr": "Rafraîchissement de l'image du tableau de bord"
       },
-      "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "required": true,
+      "default": "60",
+      "options": [
+        { "value": "0", "label": { "en": "None", "fr": "Aucun" } },
+        { "value": "30", "label": { "en": "Every 30 seconds", "fr": "Toutes les 30 secondes" } },
+        { "value": "60", "label": { "en": "Every minute", "fr": "Toutes les minutes" } },
+        { "value": "300", "label": { "en": "Every 5 minutes", "fr": "Toutes les 5 minutes" } },
+        { "value": "600", "label": { "en": "Every 10 minutes", "fr": "Toutes les 10 minutes" } }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
+      "key": "test_connection",
+      "label": { "en": "Test the connection", "fr": "Tester la connexion" },
+      "description": {
+        "en": "Logs in to the NAS (even after a refused password) and lists the cameras.",
+        "fr": "Se connecte au NAS (même après un mot de passe refusé) et liste les caméras."
+      },
       "timeout_seconds": 30
     },
     {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
+      "key": "trust_new_certificate",
+      "label": { "en": "Trust the new certificate", "fr": "Faire confiance au nouveau certificat" },
+      "description": {
+        "en": "Only after you renewed the certificate of the NAS: forgets the remembered one and trusts the next.",
+        "fr": "Seulement après avoir renouvelé le certificat du NAS : oublie celui mémorisé et accepte le suivant."
+      },
+      "timeout_seconds": 30
     }
   ],
   "scene_triggers": [
@@ -106,72 +168,70 @@
       "key": "motion_detected",
       "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
       "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
+        "en": "Surveillance Station recorded a motion (or video analytics) event on a camera. Read every few seconds: the scene starts a few seconds after the motion.",
+        "fr": "Surveillance Station a enregistré un événement de mouvement (ou d'analyse vidéo) sur une caméra. Lu toutes les quelques secondes : la scène démarre quelques secondes après le mouvement."
       },
       "fields": [
         {
-          "key": "device",
+          "key": "camera",
           "type": "select",
           "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
+          "required": false,
+          "label": { "en": "Camera (empty: any)", "fr": "Caméra (vide : toutes)" }
         },
         {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
+          "key": "reason",
+          "type": "select",
+          "required": false,
+          "label": { "en": "Detection (empty: any)", "fr": "Détection (vide : toutes)" },
           "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
+            {
+              "value": "motion",
+              "label": { "en": "Motion detection", "fr": "Détection de mouvement" }
+            },
+            { "value": "analytics", "label": { "en": "Video analytics", "fr": "Analyse vidéo" } }
           ]
         }
       ],
       "variables": [
         {
-          "key": "target",
+          "key": "camera_name",
           "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
+          "label": { "en": "Camera name", "fr": "Nom de la caméra" }
+        },
+        {
+          "key": "reason",
+          "type": "string",
+          "label": { "en": "Detection (motion, analytics)", "fr": "Détection (motion, analytics)" }
         }
       ]
-    }
-  ],
-  "scene_actions": [
+    },
     {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
+      "key": "home_mode_changed",
+      "label": { "en": "Home Mode changed", "fr": "Mode Maison changé" },
       "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
+        "en": "The Home Mode of Surveillance Station was turned on or off (from Gladys, DSM, the DS cam app or a geofence).",
+        "fr": "Le mode Maison de Surveillance Station a été activé ou désactivé (depuis Gladys, DSM, l'application DS cam ou un géorepérage)."
       },
-      "timeout_seconds": 15,
       "fields": [
         {
-          "key": "device",
+          "key": "state",
           "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
+          "required": false,
+          "label": { "en": "New state (empty: any)", "fr": "Nouvel état (vide : tous)" },
+          "options": [
+            { "value": "on", "label": { "en": "On", "fr": "Activé" } },
+            { "value": "off", "label": { "en": "Off", "fr": "Désactivé" } }
+          ]
         }
       ],
-      "outputs": [
+      "variables": [
         {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
+          "key": "state",
+          "type": "string",
+          "label": { "en": "New state (on, off)", "fr": "Nouvel état (on, off)" }
         }
       ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
     }
   ]
 }

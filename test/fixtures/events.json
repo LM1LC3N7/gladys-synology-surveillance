@@ -1,0 +1,33 @@
+{
+  "data": {
+    "events": [
+      {
+        "eventId": 1203,
+        "cameraId": 2,
+        "camera_name": "Entrée",
+        "reason": 2,
+        "startTime": 1792137000,
+        "stopTime": 1792137042,
+        "recording": false,
+        "eventSize": 6.2,
+        "mountId": 0,
+        "markAsDel": false
+      },
+      {
+        "eventId": 1202,
+        "cameraId": 1,
+        "camera_name": "Garden",
+        "reason": 1,
+        "startTime": 1792135800,
+        "stopTime": 0,
+        "recording": true,
+        "eventSize": 210.4,
+        "mountId": 0,
+        "markAsDel": false
+      }
+    ],
+    "offset": 0,
+    "total": 2
+  },
+  "success": true
+}

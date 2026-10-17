@@ -31,18 +31,27 @@ pushing.
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
-src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
-gladys-assistant-integration.json manifest: name, config_schema, actions, image...
+index.js                          SDK wiring only (src/handlers.js registers the handlers)
+src/handlers.js                   every SDK handler, wired to the app (shared with the tests)
+src/app.js                        SurveillanceApp: lifecycle, loops, images, commands, triggers
+src/synology/client.js            DSM Web API: discovery, login, session, Surveillance Station calls
+src/synology/http.js              the only network access (node:http / https, TLS pin)
+src/synology/errors.js            SynologyError, DSM error tables, retry policy
+src/store.js                      /data: device token, TLS pin, used OTP, login refusals
+src/devices.js                    the Gladys devices and their external ids (pure)
+src/config.js                     DEFAULTS (mirror the manifest defaults) + normalization
+src/constants.js, src/i18n.js     keys, limits, timings; runtime texts (en/fr)
+gladys-assistant-integration.json manifest: name, config_schema, actions, triggers...
 docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
+test/                             node --test: SDK fake Gladys, fake NAS, loopback servers
+scripts/cover.mjs                 generates cover.png (plain Node)
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
+
+Safety rules of this integration (TODO.md, "Decisions"): disabling a camera
+and turning Home Mode on stay refused unless `allow_camera_control`; every
+command is serialized, re-reads the state before acting and sends nothing past
+3.5 s; a login refused by DSM is never retried without a user action.
 
 ## Rules
 

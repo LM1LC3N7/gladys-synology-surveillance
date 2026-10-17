@@ -1,45 +1,78 @@
 // -----------------------------------------------------------------------------
-// Integration configuration.
-//
-// The configuration is filled in by the user in Gladys, from the `config_schema`
-// declared in `gladys-assistant-integration.json`. The SDK fetches it for you
-// (`gladys.getConfig()`) and notifies you of every change through
-// `gladys.onConfigUpdated()`.
-//
-// This module only provides defaults and normalizes the received object, so the
-// rest of the code never has to deal with `undefined`.
+// The configuration the user fills (manifest `config_schema`), normalized.
 // -----------------------------------------------------------------------------
 
-// Defaults: they MUST stay consistent with the `default` values declared in the
-// `config_schema` of the manifest.
-export const DEFAULT_CONFIG = {
-  latitude: 48.8566, // Paris
-  longitude: 2.3522,
-  unit: 'celsius', // 'celsius' | 'fahrenheit'
-  // Seconds between two reads of the polled sensors. Gladys polls at most once
-  // a minute: slower intervals are applied by skipping polls (see
-  // createPoller in src/devices/index.js).
-  poll_frequency: 300,
-  // Reserved key (NOT in config_schema): because the manifest declares both
-  // 'local' and 'cloud' in its `transports` field, Gladys shows a standard
-  // "Prefer the local connection" toggle and sends the user's choice here.
-  // Read-only for the integration; defaults to true.
-  GLADYS_PREFER_LOCAL: true,
+import { EVENT_INTERVALS, IMAGE_INTERVALS } from './constants.js';
+
+// Defaults: they MUST match the `default` values of the manifest.
+export const DEFAULTS = Object.freeze({
+  allow_self_signed: false,
+  allow_camera_control: false,
+  event_interval: '10',
+  image_refresh: '60',
+});
+
+/** DSM's own default ports. */
+export const DEFAULT_PORTS = Object.freeze({ 'http:': 5000, 'https:': 5001 });
+
+const text = (value) => (typeof value === 'string' ? value.trim() : '');
+const bool = (value, fallback) => {
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return fallback;
 };
 
 /**
- * Merge the user config with the defaults.
- * @param {Record<string, unknown>} raw config returned by the SDK
+ * The address of the NAS: `https://host:port`, `http://host:port`, or a bare
+ * `host[:port]` read as https (port 5001 when none is typed). Credentials, a
+ * path, a query and a fragment are refused (the password has its own field,
+ * and an address ends up in logs).
+ *   -> { origin, protocol, hostname, port } or { error: 'empty' | 'invalid' | 'credentials' }
  */
-export function normalizeConfig(raw = {}) {
+export function parseNasUrl(value) {
+  const raw = text(value);
+  if (!raw) return { error: 'empty' };
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw);
+  let url;
+  try {
+    url = new URL(hasScheme ? raw : `https://${raw}`);
+  } catch {
+    return { error: 'invalid' };
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return { error: 'invalid' };
+  if (url.username || url.password) return { error: 'credentials' };
+  if (url.search || url.hash || !url.hostname) return { error: 'invalid' };
+  if (url.pathname !== '/' && url.pathname !== '') return { error: 'invalid' };
+  const port = url.port ? Number(url.port) : DEFAULT_PORTS[url.protocol];
+  const hostname = url.hostname.toLowerCase();
   return {
-    ...DEFAULT_CONFIG,
-    ...raw,
-    // Force the types: config may arrive as strings from a form.
-    latitude: Number(raw.latitude ?? DEFAULT_CONFIG.latitude),
-    longitude: Number(raw.longitude ?? DEFAULT_CONFIG.longitude),
-    poll_frequency: Number(raw.poll_frequency ?? DEFAULT_CONFIG.poll_frequency),
-    // The preference is a boolean; anything but an explicit false means true.
-    GLADYS_PREFER_LOCAL: raw.GLADYS_PREFER_LOCAL !== false,
+    origin: `${url.protocol}//${hostname}:${port}`,
+    protocol: url.protocol,
+    hostname,
+    port,
+  };
+}
+
+/** A one-time code of the 2-step verification: 6 digits, spaces ignored. */
+export function parseOtp(value) {
+  const digits = text(value).replace(/\s+/g, '');
+  return /^\d{6}$/.test(digits) ? digits : '';
+}
+
+export function normalizeConfig(raw = {}) {
+  raw = raw ?? {};
+  const nas = parseNasUrl(raw.url);
+  const pick = (key, list) => (list.includes(String(raw[key])) ? String(raw[key]) : DEFAULTS[key]);
+  return {
+    nas: nas.error ? null : nas,
+    urlError: nas.error ?? null,
+    username: text(raw.username),
+    password: typeof raw.password === 'string' ? raw.password : '',
+    otpCode: parseOtp(raw.otp_code),
+    otpInvalid: text(raw.otp_code) !== '' && parseOtp(raw.otp_code) === '',
+    allowSelfSigned: bool(raw.allow_self_signed, DEFAULTS.allow_self_signed),
+    allowControl: bool(raw.allow_camera_control, DEFAULTS.allow_camera_control),
+    eventSeconds: Number(pick('event_interval', EVENT_INTERVALS)),
+    imageSeconds: Number(pick('image_refresh', IMAGE_INTERVALS)),
   };
 }

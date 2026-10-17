@@ -1,0 +1,53 @@
+{
+  "data": {
+    "cameras": [
+      {
+        "id": 1,
+        "name": "Garden",
+        "newName": "Garden",
+        "enabled": true,
+        "status": 1,
+        "vendor": "Reolink",
+        "model": "RLC-810A",
+        "ip": "192.168.1.21",
+        "port": 554,
+        "resolution": "3840x2160",
+        "fps": 15,
+        "recStatus": 0,
+        "camStatus": 1
+      },
+      {
+        "id": 2,
+        "name": "Entrée",
+        "newName": "Entrée",
+        "enabled": true,
+        "status": 1,
+        "vendor": "Hikvision",
+        "model": "DS-2CD2143G2-I",
+        "ip": "192.168.1.22",
+        "port": 554,
+        "resolution": "2688x1520",
+        "fps": 20,
+        "recStatus": 2,
+        "camStatus": 1
+      },
+      {
+        "id": 5,
+        "name": "Garage",
+        "newName": "Garage",
+        "enabled": false,
+        "status": 7,
+        "vendor": "Axis",
+        "model": "M3106-L Mk II",
+        "ip": "192.168.1.25",
+        "port": 554,
+        "resolution": "1920x1080",
+        "fps": 10,
+        "recStatus": 0,
+        "camStatus": 7
+      }
+    ],
+    "total": 3
+  },
+  "success": true
+}

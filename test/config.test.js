@@ -1,33 +1,55 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeConfig, DEFAULT_CONFIG } from '../src/config.js';
+import { DEFAULTS, normalizeConfig, parseNasUrl, parseOtp } from '../src/config.js';
 
-test('normalizeConfig returns the defaults when called with no argument', () => {
-  assert.deepEqual(normalizeConfig(), DEFAULT_CONFIG);
+test('the NAS address: https by default, DSM ports, nothing but an origin', () => {
+  assert.deepEqual(parseNasUrl('192.168.1.10'), {
+    origin: 'https://192.168.1.10:5001',
+    protocol: 'https:',
+    hostname: '192.168.1.10',
+    port: 5001,
+  });
+  assert.equal(parseNasUrl('http://NAS.local').origin, 'http://nas.local:5000');
+  assert.equal(parseNasUrl('https://nas.local:8443/').origin, 'https://nas.local:8443');
+  assert.equal(parseNasUrl('nas.local:5000').origin, 'https://nas.local:5000');
+  assert.equal(parseNasUrl('https://[fd00::10]:5001').origin, 'https://[fd00::10]:5001');
+  assert.deepEqual(parseNasUrl(''), { error: 'empty' });
+  assert.deepEqual(parseNasUrl('https://admin:pw@nas:5001'), { error: 'credentials' });
+  assert.deepEqual(parseNasUrl('https://nas:5001/webapi'), { error: 'invalid' });
+  assert.deepEqual(parseNasUrl('https://nas:5001/?a=1'), { error: 'invalid' });
+  assert.deepEqual(parseNasUrl('ftp://nas'), { error: 'invalid' });
+  assert.deepEqual(parseNasUrl('http://'), { error: 'invalid' });
 });
 
-test('normalizeConfig keeps user values over the defaults', () => {
-  const config = normalizeConfig({ latitude: 45.5, longitude: -73.6, unit: 'fahrenheit' });
-  assert.equal(config.latitude, 45.5);
-  assert.equal(config.longitude, -73.6);
-  assert.equal(config.unit, 'fahrenheit');
+test('the 2-step verification code: 6 digits, spaces ignored', () => {
+  assert.equal(parseOtp('123 456'), '123456');
+  assert.equal(parseOtp('12345'), '');
+  assert.equal(parseOtp('abcdef'), '');
+  assert.equal(parseOtp(undefined), '');
 });
 
-test('normalizeConfig coerces numeric strings coming from a form', () => {
-  const config = normalizeConfig({ latitude: '48.8', longitude: '2.3', poll_frequency: '600' });
-  assert.equal(config.latitude, 48.8);
-  assert.equal(config.longitude, 2.3);
-  assert.equal(config.poll_frequency, 600);
-  assert.equal(typeof config.poll_frequency, 'number');
-});
-
-test('normalizeConfig falls back to the default for a missing numeric field', () => {
-  const config = normalizeConfig({ unit: 'celsius' });
-  assert.equal(config.poll_frequency, DEFAULT_CONFIG.poll_frequency);
-});
-
-test('GLADYS_PREFER_LOCAL defaults to true and only an explicit false disables it', () => {
-  assert.equal(normalizeConfig().GLADYS_PREFER_LOCAL, true);
-  assert.equal(normalizeConfig({ GLADYS_PREFER_LOCAL: true }).GLADYS_PREFER_LOCAL, true);
-  assert.equal(normalizeConfig({ GLADYS_PREFER_LOCAL: false }).GLADYS_PREFER_LOCAL, false);
+test('defaults: no self-signed certificate, no reduction of the surveillance', () => {
+  const config = normalizeConfig();
+  assert.equal(config.allowSelfSigned, false);
+  assert.equal(config.allowControl, false);
+  assert.equal(config.eventSeconds, Number(DEFAULTS.event_interval));
+  assert.equal(config.imageSeconds, Number(DEFAULTS.image_refresh));
+  assert.equal(config.urlError, 'empty');
+  const set = normalizeConfig({
+    url: 'nas',
+    username: ' gladys ',
+    password: ' pw ',
+    otp_code: '12',
+    allow_self_signed: true,
+    allow_camera_control: 'true',
+    event_interval: '30',
+    image_refresh: '7',
+  });
+  assert.equal(set.username, 'gladys');
+  assert.equal(set.password, ' pw ', 'a password is kept as typed');
+  assert.equal(set.otpInvalid, true);
+  assert.equal(set.allowSelfSigned, true);
+  assert.equal(set.allowControl, true);
+  assert.equal(set.eventSeconds, 30);
+  assert.equal(set.imageSeconds, 60, 'an unknown value falls back to the default');
 });

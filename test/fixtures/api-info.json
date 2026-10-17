@@ -1,0 +1,11 @@
+{
+  "data": {
+    "SYNO.API.Auth": { "maxVersion": 7, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.SurveillanceStation.Info": { "maxVersion": 8, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.SurveillanceStation.Camera": { "maxVersion": 9, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.SurveillanceStation.HomeMode": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.SurveillanceStation.Event": { "maxVersion": 5, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.SurveillanceStation.Recording": { "maxVersion": 6, "minVersion": 1, "path": "entry.cgi" }
+  },
+  "success": true
+}
