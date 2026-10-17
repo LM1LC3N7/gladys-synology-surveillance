@@ -105,6 +105,8 @@ export class SynologyClient {
     /** A final login refusal: kept until resetRefusal(). */
     this.refusal = null;
     this.closed = false;
+    /** The NAS clock minus ours (see observeClock). */
+    this.clockOffsetMs = 0;
   }
 
   // --- Transport -------------------------------------------------------------
@@ -151,6 +153,7 @@ export class SynologyClient {
       maxBytes: raw ? MAX_JPEG_BYTES : MAX_JSON_BYTES,
       tls: this.tlsOptions(),
     });
+    this.observeClock(response.headers?.date);
     if (response.status !== 200) {
       const err = new SynologyError(CODES.HTTP, `HTTP ${response.status}`, {
         status: response.status,
@@ -174,6 +177,20 @@ export class SynologyClient {
     }
     if (raw) throw new SynologyError(CODES.BAD_ANSWER, 'Not an image');
     return json.data ?? {};
+  }
+
+  /**
+   * The NAS clock minus ours, from the `Date` header of its answers (second
+   * precision): the event times of Surveillance Station are in the NAS clock.
+   */
+  observeClock(header) {
+    const date = Date.parse(Array.isArray(header) ? header[0] : (header ?? ''));
+    if (Number.isFinite(date)) this.clockOffsetMs = date - this.now();
+  }
+
+  /** The NAS time now, in seconds (our clock until a `Date` header was seen). */
+  nasNowS() {
+    return Math.floor((this.now() + this.clockOffsetMs) / 1000);
   }
 
   // --- API discovery ---------------------------------------------------------

@@ -124,9 +124,10 @@ export const INTERVALS = Object.freeze({
 /** A motion event counts as current this long after it stopped. */
 export const MOTION_HOLD_MS = 30_000;
 /**
- * A motion event seen late (after a restart, a NAS outage) still fires when
- * it ended (or is still running) less than this ago; older, it is only
- * marked as seen.
+ * The catch-up reading only (after a start, a reconnection to Gladys, a NAS
+ * outage): a motion event still fires when it ended (or is still running)
+ * less than this ago, NAS time; older, it is only marked as seen. In steady
+ * running every new event fires, whatever its age.
  */
 export const MOTION_MAX_AGE_S = 120;
 /** Events read in one request (newest first). */

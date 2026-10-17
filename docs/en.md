@@ -82,11 +82,15 @@ recent events at the chosen pace. A motion or video analytics event fires
 `analytics`) and sets the motion sensor of the camera; the sensor goes back
 to "no motion" once the event is over.
 
-An event fires only if it ended (or is still running) less than 2 minutes
-ago: after a NAS outage, the old events are marked as seen without a burst
-of triggers. Gladys keeps in its `/data` volume the last event it processed:
-after a restart of the integration or a reconnection to Gladys, the newer
-events of the last 2 minutes still fire, and none fires twice. Motion
+In normal running, every new event fires, whatever the clocks say. Only the
+reading that catches up (after a start of the integration, a reconnection to
+Gladys or a NAS outage) is limited to the events that ended (or still run)
+less than 2 minutes ago: the old events of an outage are marked as seen
+without a burst of triggers. Gladys keeps in its `/data` volume the last
+events it processed, so none fires twice after a restart. The 2 minutes are
+measured in NAS time (Gladys reads the clock of the NAS in its answers), but
+keep both clocks synchronized (NTP, in DSM: Control Panel → Regional
+Options → Time) for this catch-up to be exact. Motion
 detection must be enabled on the camera in Surveillance Station (event
 detection settings).
 
@@ -101,7 +105,8 @@ detection settings).
 - **Lost session** (DSM restarted, session expired): renewed once, never in a
   loop (at most one login every 30 s).
 - **NAS busy** (HTTP 429): every request pauses for 1 minute to 6 hours, as
-  long as the NAS asks (Retry-After). **Server error** (HTTP 5xx, DSM
+  long as the NAS asks (Retry-After), even across a restart; saving the
+  configuration or pressing **Test the connection** lifts it. **Server error** (HTTP 5xx, DSM
   restarting or updating): retried like an unreachable NAS.
 
 ## Limits

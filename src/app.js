@@ -117,7 +117,10 @@ export class SurveillanceApp {
     this.motionUntil = new Map(); // camera id -> ms
     this.seenEvents = new Set();
     this.eventsArmed = false;
-    this.motionMark = null; // { start, key } of the last motion event processed
+    // The next event reading catches up (start, reconnection, after an outage):
+    // only the events of the last 2 minutes (NAS clock) may fire then.
+    this.catchUp = true;
+    this.motionMark = null; // { start, keys } of the last motion events processed
     this.transports = new Map(); // device external id -> transport
     this.inFlightImages = new Map();
     this.bigImageWarned = new Set();
@@ -168,7 +171,10 @@ export class SurveillanceApp {
   dropClient() {
     const client = this.client;
     this.client = null;
-    if (client) {
+    // During an HTTP 429 pause, not even a logout.
+    if (client && this.paused()) {
+      client.close();
+    } else if (client) {
       client
         .logout()
         .catch(() => {})
@@ -223,7 +229,22 @@ export class SurveillanceApp {
       now: this.now,
     });
     this.logger.info(`Using the NAS at ${config.nas.origin}`);
+    // An HTTP 429 pause outlives a restart and a reconnection to Gladys;
+    // only the user lifts it (button, saved configuration).
+    const pausedUntil = Number(this.store.get('meta', this.pauseKey())) || 0;
+    if (force && pausedUntil) await this.store.set('meta', this.pauseKey(), null);
+    if (!force && this.now() < pausedUntil) {
+      this.pausedUntil = pausedUntil;
+      const delay = pausedUntil - this.now();
+      await this.setStatus(false, T.status.busy(delay));
+      this.schedule(delay, () => this.connect(generation));
+      return;
+    }
     await this.connect(generation);
+  }
+
+  pauseKey() {
+    return `pausedUntil|${this.config.nas.origin}`;
   }
 
   schedule(delay, task) {
@@ -277,6 +298,7 @@ export class SurveillanceApp {
     if (generation !== this.generation) return;
     const wasOnline = this.online;
     this.online = false;
+    this.catchUp = true; // the first event reading after the outage catches up
     this.halt();
     await this.publishCameraTransports();
     if (isFinalAuthError(err)) {
@@ -309,6 +331,9 @@ export class SurveillanceApp {
         this.pausedUntil = this.now() + delay;
       }
     }
+    if (this.pausedUntil > this.now()) {
+      await this.store.set('meta', this.pauseKey(), String(this.pausedUntil));
+    }
     if (wasOnline || delay === INTERVALS.RETRY_MIN_MS) {
       this.logger.warn(`The NAS fails: ${err.message}`);
     }
@@ -339,6 +364,16 @@ export class SurveillanceApp {
       return true;
     }
     return false;
+  }
+
+  /**
+   * An HTTP 429 met by a command or an image: the NAS refused it without
+   * doing it. Every path pauses (failed()), and the caller is told so.
+   */
+  async throwIfBusy(err, generation) {
+    if (err?.status !== 429) return;
+    await this.failed(err, generation);
+    throw new Error(T.errors.busyRefused, { cause: err });
   }
 
   paused() {
@@ -488,12 +523,16 @@ export class SurveillanceApp {
 
   // --- Events: motion --------------------------------------------------------
   //
-  // An event fires `motion_detected` once (its key is remembered), when it
-  // ended (or is still running) less than 2 minutes ago: the events of a NAS
-  // outage are marked as seen without a burst of old triggers. After a start
-  // (or a reconnection to Gladys), the mark kept in /data tells which events
-  // were already processed: the newer ones still fire, within the same 2
-  // minutes. Without any mark (first start), recent events fire too.
+  // An event fires `motion_detected` once (its key is remembered). In steady
+  // running (the previous reading succeeded), every new event fires, whatever
+  // its age: the clocks of the NAS and of Gladys play no part. The reading
+  // that catches up (the first after a start, a reconnection to Gladys or a
+  // NAS outage) fires only the events that ended (or still run) less than 2
+  // minutes ago, NAS time (our clock + the offset measured with the `Date`
+  // header of the NAS): the events of an outage are marked as seen without a
+  // burst of old triggers. After a start, the mark kept in /data (start time
+  // and keys of the last motion events processed) also says which events
+  // already fired. Without any mark (first start), recent events fire.
 
   async eventLoop(generation, epoch) {
     if (!this.current(generation, epoch)) return;
@@ -512,34 +551,49 @@ export class SurveillanceApp {
     }
   }
 
+  /** `{ start, keys }` from `<start>|<key>,<key>...` (keys hold no `|` nor `,`). */
   readMotionMark() {
     const raw = this.store.get('motionMarks', this.config.nas.origin);
-    const [start, key] = String(raw ?? '').split('|');
+    const [start, keys] = String(raw ?? '').split('|');
     const number = Number(start);
-    return raw && key && Number.isFinite(number) ? { start: number, key } : null;
+    return raw && keys && Number.isFinite(number)
+      ? { start: number, keys: new Set(keys.split(',')) }
+      : null;
   }
 
   async pollEvents() {
     const client = this.client;
     if (!client) return;
-    const nowS = Math.floor(this.now() / 1000);
+    const nowS = client.nasNowS();
     const events = await client.events({ fromTime: nowS - EVENT_WINDOW_S, limit: EVENT_PAGE });
     if (client !== this.client) return;
+    // The NAS time again: the answer just refreshed the clock offset.
+    const nasNowS = client.nasNowS();
     const time = this.now();
     const mark = this.motionMark;
-    let newest = mark;
+    const catchUp = this.catchUp;
+    let newest = mark ? { start: mark.start, keys: new Set(mark.keys) } : null;
     // Oldest first: the triggers fire in the order things happened.
     for (const event of [...events].sort((a, b) => a.start - b.start)) {
       if (!MOTION_REASONS.includes(event.reason)) continue;
       const isNew = !this.seenEvents.has(event.key);
       if (isNew) this.remember(event.key);
-      if (!newest || event.start >= newest.start) newest = { start: event.start, key: event.key };
-      const lastActive = event.ongoing ? nowS : (event.stop ?? event.start);
-      const recent = lastActive >= nowS - MOTION_MAX_AGE_S;
-      const afterMark =
-        !mark || event.start > mark.start || (event.start === mark.start && event.key !== mark.key);
+      if (!newest || event.start > newest.start) {
+        newest = { start: event.start, keys: new Set([event.key]) };
+      } else if (event.start === newest.start) {
+        newest.keys.add(event.key);
+      }
+      let fire = isNew;
+      if (catchUp) {
+        const lastActive = event.ongoing ? nasNowS : (event.stop ?? event.start);
+        const recent = lastActive >= nasNowS - MOTION_MAX_AGE_S;
+        const afterMark =
+          !mark ||
+          event.start > mark.start ||
+          (event.start === mark.start && !mark.keys.has(event.key));
+        fire = isNew && recent && (this.eventsArmed || afterMark);
+      }
       const camera = this.cameras.get(event.cameraId);
-      const fire = isNew && recent && (this.eventsArmed || afterMark);
       if (event.ongoing || fire) this.motionUntil.set(event.cameraId, time + MOTION_HOLD_MS);
       if (fire && camera) {
         await this.sceneEvent(SCENE_TRIGGERS.MOTION, {
@@ -550,9 +604,11 @@ export class SurveillanceApp {
       }
     }
     this.eventsArmed = true;
-    if (newest && (newest.start !== mark?.start || newest.key !== mark?.key)) {
+    this.catchUp = false;
+    const serialize = (m) => (m ? `${m.start}|${[...m.keys].sort().join(',')}` : null);
+    if (newest && serialize(newest) !== serialize(mark)) {
       this.motionMark = newest;
-      await this.store.set('motionMarks', this.config.nas.origin, `${newest.start}|${newest.key}`);
+      await this.store.set('motionMarks', this.config.nas.origin, serialize(newest));
     }
     const states = createdDevices(this.gladys).cameras.map(({ id }) => ({
       device_feature_external_id: cameraIds(this.gladys, id).feature(FEATURES.MOTION),
@@ -607,6 +663,7 @@ export class SurveillanceApp {
         deadline: this.now() + TIMEOUTS.LIVE_IMAGE,
       });
     } catch (err) {
+      await this.throwIfBusy(err, this.generation);
       throw new Error(T.errors.image(camera?.name ?? device.name ?? parsed.id, err), {
         cause: err,
       });
@@ -727,6 +784,7 @@ export class SurveillanceApp {
         current = await read({ deadline: deadline - COMMAND_MIN_SEND_MS });
       } catch (err) {
         if (err.message === T.errors.unknownCamera) throw err;
+        await this.throwIfBusy(err, generation);
         throw new Error(T.errors.unknownState(err), { cause: err });
       }
       if (typeof current !== 'boolean') throw new Error(T.errors.unknownState({}));
@@ -741,6 +799,7 @@ export class SurveillanceApp {
       try {
         await send({ deadline });
       } catch (err) {
+        await this.throwIfBusy(err, generation);
         if (err.notSent) throw new Error(T.errors.notSent(err), { cause: err });
         if (err.code === CODES.API) throw new Error(T.errors.refused(err), { cause: err });
         // Sent, no answer: nobody knows. Read the truth again soon.

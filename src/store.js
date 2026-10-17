@@ -12,10 +12,11 @@
 //   - refusals: an HMAC (keyed with `meta.salt`) of the values DSM refused at
 //     login, with the DSM code, per NAS and account: a restart (or a
 //     reconnection to Gladys) with the same values does not log in again.
-//   - motionMarks: the last motion event processed, per NAS
-//     (`<start time, NAS clock>|<event key>`): the events of a restart or an
-//     outage are fired once, the older ones only marked as seen.
-//   - meta.salt: a random key generated once for the HMAC above.
+//   - motionMarks: the last motion events processed, per NAS
+//     (`<start time, NAS clock>|<key>,<key>...`, every key of that second):
+//     after a restart, an event already fired never fires again.
+//   - meta: `salt`, a random key generated once for the HMAC above, and
+//     `pausedUntil|<origin>`, the end of an HTTP 429 pause (ms).
 // Writes are atomic (temporary file + rename) and queued. When the file
 // cannot be written (no /data during development), values stay in memory.
 // -----------------------------------------------------------------------------

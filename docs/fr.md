@@ -93,12 +93,17 @@ nom et `motion` ou `analytics`) et active le détecteur de mouvement de la
 caméra ; le détecteur revient à « pas de mouvement » une fois l’événement
 terminé.
 
-Un événement ne déclenche que s’il s’est terminé (ou dure encore) il y a
-moins de 2 minutes : après une panne du NAS, les anciens événements sont
-marqués vus sans rafale de déclenchements. Gladys garde dans son volume
-`/data` le dernier événement traité : après un redémarrage de l’intégration
-ou une reconnexion à Gladys, les événements plus récents des 2 dernières
-minutes déclenchent quand même, et aucun ne déclenche deux fois. La détection
+En marche normale, chaque nouvel événement déclenche, quelles que soient les
+horloges. Seule la lecture de rattrapage (après un démarrage de
+l’intégration, une reconnexion à Gladys ou une panne du NAS) se limite aux
+événements terminés (ou encore en cours) il y a moins de 2 minutes : les
+anciens événements d’une panne sont marqués vus sans rafale de
+déclenchements. Gladys garde dans son volume `/data` les derniers événements
+traités, aucun ne déclenche donc deux fois après un redémarrage. Les 2
+minutes se comptent en heure du NAS (Gladys lit l’horloge du NAS dans ses
+réponses), mais gardez les deux horloges synchronisées (NTP, dans DSM :
+Panneau de configuration → Options régionales → Heure) pour que ce
+rattrapage soit exact. La détection
 de mouvement doit être activée sur la caméra dans Surveillance Station
 (paramètres de détection d’événements).
 
@@ -113,7 +118,9 @@ de mouvement doit être activée sur la caméra dans Surveillance Station
 - **Session perdue** (DSM redémarré, session expirée) : renouvelée une fois,
   jamais en boucle (une connexion toutes les 30 s au plus).
 - **NAS surchargé** (HTTP 429) : toutes les requêtes s’arrêtent de 1 minute à
-  6 heures, aussi longtemps que le NAS le demande (Retry-After). **Erreur
+  6 heures, aussi longtemps que le NAS le demande (Retry-After), même après un
+  redémarrage ; enregistrer la configuration ou appuyer sur **Tester la
+  connexion** lève la pause. **Erreur
   serveur** (HTTP 5xx, DSM qui redémarre ou se met à jour) : nouvel essai
   comme pour un NAS injoignable.
 

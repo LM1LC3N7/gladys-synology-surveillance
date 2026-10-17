@@ -19,14 +19,15 @@ the notes of the version's GitHub Release.
   of Gladys), a motion sensor and an online / unreachable badge.
 - The Home Mode of Surveillance Station as a switch, and the scene triggers
   "Motion detected" (motion detection or video analytics, read every 5 s to
-  1 min; the events of a restart or an outage fire once, within 2 minutes,
-  never in a burst) and "Home Mode changed".
+  1 min; every new event fires in normal running, whatever the clocks; after
+  a restart or an outage only the events of the last 2 minutes, NAS time,
+  never twice nor in a burst) and "Home Mode changed".
 - Local connection through the Web API of DSM with a dedicated account: 2-step
   verification handled once (device token kept in `/data`, the code field
   masked), a self-signed certificate accepted only when allowed (trusted on
   first use, then pinned), a lost session renewed once and at most one login
   every 30 s, a refused password never tried again alone, a NAS asking to
-  slow down (HTTP 429) paused as long as it asks.
+  slow down (HTTP 429) paused as long as it asks, restarts included.
 - Safety: disabling a camera and turning Home Mode on are refused unless
   allowed in the configuration, checked again just before sending; every
   command runs alone, reads the state just before acting (unknown: refused),

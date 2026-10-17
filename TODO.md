@@ -39,6 +39,10 @@ up to date at the end of every milestone.
       dashboard image, snapshot by its bytes, `camStatus`, strict numbers,
       salted HMAC, `camera`/`enabled` feature, OTP as a secret
       (`test/review.test.js` holds the reviewer's reproductions).
+- [x] **Approval corrections** (2026-10-17): 2-minute rule only for the
+      catch-up readings, NAS clock offset from the `Date` header, all keys
+      of the mark's start second, 429 pause kept in `/data` and applied to
+      commands / images, readable "not logged in" (`test/approval.test.js`).
 - [ ] **Milestone 2 — real NAS** (a tester with Surveillance Station):
       record real answers as fixtures (secrets removed), fix what differs.
       To check first:
@@ -51,9 +55,8 @@ up to date at the end of every milestone.
     order, whether `fromTime` is honoured, the reason codes (2 motion, 7
     analytics?) and how long a motion event stays "recording";
   - the NAS clock vs the container clock (the 15-minute window absorbs a
-    skew; the 2-minute age of a motion event compares the NAS times of the
-    event with the container clock: a skew above a minute or so loses or
-    revives events);
+    skew; the catch-up age of a motion event uses the offset read from the
+    `Date` header: does DSM send it, in UTC, through its nginx?);
   - `GetSnapshot`: the size of real snapshots per profile, the time it
     takes (onGetImage has 15 s), the answer for a disabled or disconnected
     camera (error 402? an empty image?);
@@ -139,7 +142,11 @@ up to date at the end of every milestone.
   failure (network, timeout, HTTP error, TLS) retries after 30 s, doubling
   up to 10 min; an HTTP 5xx says "server error" and honours a Retry-After
   (up to 6 h). HTTP 429 pauses every path (loops, commands, images,
-  Discovery) for its Retry-After, bounded 1 min to 6 h.
+  Discovery, even the logout) for its Retry-After, bounded 1 min to 6 h;
+  the end of the pause is kept in `/data` (`meta`), so a restart or a
+  reconnection to Gladys waits too; only the user lifts it (saved
+  configuration, "Test the connection"). A 429 answered to a command or an
+  image is reported "refused, not done" and pauses everything.
 - **Login rate**: at most one login every 30 s per client, whatever asks
   (a lost session included): a NAS that keeps dropping the session never
   gets a login per request. "Test the connection" and a saved
@@ -164,13 +171,18 @@ up to date at the end of every milestone.
 - **Motion by polling**: Surveillance Station has no push API besides Action
   Rules (webhooks configured by hand): `Event.List` is read every 5-60 s
   (10 s default), one request for all cameras, the last 15 minutes, 50
-  events. Each event key (`camera:id:start`) fires once (500 remembered),
-  and only when it ended (or still runs) less than 2 minutes ago: an outage
-  does not end in a burst of old triggers. A mark in `/data` (NAS start
-  time and key of the last motion event processed) carries over restarts
-  and reconnections to Gladys: after one, the events newer than the mark
-  (and of the last 2 minutes) fire, the others are only marked as seen; no
-  mark (first start): the events of the last 2 minutes fire. An event
+  events. Each event key (`camera:id:start`) fires once (500 remembered).
+  In steady running (armed, previous reading done), every new event fires,
+  whatever its age: no clock comparison at all (a NAS late by minutes lost
+  every motion before the approval fix). Only the catch-up reading (the
+  first after a start, a reconnection to Gladys or a NAS outage) fires just
+  the events that ended (or still run) less than 2 minutes ago, in NAS
+  time: our clock plus the offset measured with the HTTP `Date` header of
+  every NAS answer (also used for `fromTime`); docs ask for NTP on both. A
+  mark in `/data` (NAS start time and ALL the keys sharing it) carries over
+  restarts: after one, only events newer than the mark (start later, or
+  same start and another key) fire; no mark (first start): the events of
+  the last 2 minutes fire. An event
   without a stop time is not "still recording" (only `stopTime: 0` or
   `recording: true` are). The motion sensor is 1 while a motion event is
   still recording, or for 30 s after a new one fired (container clock).

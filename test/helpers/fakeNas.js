@@ -67,6 +67,12 @@ export function createFakeNas({
     httpError: null,
     /** Content type of the snapshots (some DSM versions send another one). */
     snapshotType: 'image/jpeg',
+    /** The NAS clock minus the container clock (its `Date` header and event times). */
+    clockSkewMs: 0,
+    /** The NAS time now, in seconds (for the event times of a test). */
+    nowS() {
+      return Math.floor(((this.clock?.now ?? Date.now()) + this.clockSkewMs) / 1000);
+    },
 
     expireSessions() {
       this.sessions.clear();
@@ -159,7 +165,11 @@ export function createFakeNas({
     /** The transport of src/synology/http.js. */
     request: async (url, options = {}) => {
       if (nas.down) throw new SynologyError(nas.down, `fake ${nas.down}`);
-      return nas.handle(options.method ?? 'GET', url, options.body);
+      const answer = nas.handle(options.method ?? 'GET', url, options.body);
+      if (!nas.clock) return answer;
+      // Like a web server: the `Date` header, from the NAS clock.
+      const date = new Date(nas.clock.now + nas.clockSkewMs).toUTCString();
+      return { ...answer, headers: { date, ...answer.headers } };
     },
 
     /** Serve the API on 127.0.0.1 (random port). Resolves { url, close }. */

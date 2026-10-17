@@ -28,6 +28,11 @@ export function reasonOf(err) {
       return { en: 'API missing', fr: 'API absente' };
     case CODES.API:
       return { en: `DSM error ${err.apiCode}`, fr: `erreur DSM ${err.apiCode}` };
+    case CODES.NOT_LOGGED_IN:
+      return {
+        en: 'not logged in to the NAS yet (session lost, next login in a few seconds)',
+        fr: 'pas encore connecté au NAS (session perdue, nouvelle connexion dans quelques secondes)',
+      };
     default:
       return { en: err?.code ?? 'error', fr: err?.code ?? 'erreur' };
   }
@@ -192,6 +197,8 @@ export const T = {
     refused: (err) => `The NAS refused the command (${reasonOf(err).en})`,
     configChanged: 'The configuration changed meanwhile: nothing was sent, try again',
     busy: 'The NAS asked Gladys to slow down: nothing was sent, try again later',
+    busyRefused:
+      'The NAS refused the request (HTTP 429, too many requests): nothing was done, Gladys pauses its requests',
     testTooLong:
       'The NAS has not answered yet: see the connection status in a moment (nothing else to do)',
     cameraDisabled: 'The camera is disabled in Surveillance Station: no image',
